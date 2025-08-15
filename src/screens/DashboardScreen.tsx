@@ -13,6 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, shadows, clayStyles } from '../styles/theme';
 import { User, Baby } from '../types';
+import { debugStorage, clearAllStorage } from '../utils/debugStorage';
 
 const { width } = Dimensions.get('window');
 
@@ -27,6 +28,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   baby,
   onSignOut,
 }) => {
+  console.log('=== DASHBOARD SCREEN RENDERING ===');
+  console.log('User:', user);
+  console.log('Baby:', baby);
+  console.log('=== END DASHBOARD DEBUG ===');
   const calculateAge = (birthDate: Date) => {
     const today = new Date();
     const birth = new Date(birthDate);
@@ -116,10 +121,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         >
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.welcomeSection}>
+                        <View style={styles.welcomeSection}>
               <Text style={styles.welcomeText}>Good day, {user.name}! 👋</Text>
               <TouchableOpacity onPress={onSignOut} style={styles.signOutButton}>
-                <Ionicons name="log-out-outline" size={20} color={colors.lightText} />
+                <Ionicons name="log-out-outline" size={18} color={colors.white} />
+                <Text style={styles.signOutText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Debug buttons - can be removed in production */}
+            <View style={styles.debugSection}>
+              <TouchableOpacity onPress={debugStorage} style={styles.debugButton}>
+                <Text style={styles.debugText}>Debug Storage</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={clearAllStorage} style={styles.debugButton}>
+                <Text style={styles.debugText}>Clear All Data</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -226,7 +242,36 @@ const styles = StyleSheet.create({
     color: colors.darkText,
   },
   signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    ...shadows.soft,
+  },
+  signOutText: {
+    ...typography.caption,
+    color: colors.white,
+    marginLeft: spacing.xs,
+    fontWeight: '600',
+  },
+  debugSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  debugButton: {
     padding: spacing.sm,
+    backgroundColor: colors.lightText,
+    borderRadius: 8,
+    opacity: 0.7,
+  },
+  debugText: {
+    ...typography.caption,
+    color: colors.white,
+    fontSize: 10,
   },
   babyProfileSection: {
     paddingVertical: spacing.md,

@@ -9,6 +9,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -19,6 +20,7 @@ import { colors, typography, spacing, shadows, clayStyles } from '../styles/them
 import { authService } from '../services/authService';
 import { User } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearAllStorage } from '../utils/debugStorage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -230,6 +232,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
               </View>
             </View>
 
+            <TouchableOpacity onPress={clearAllStorage} style={styles.clearButton}>
+              <Text style={styles.clearButtonText}>Clear All Data (Debug)</Text>
+            </TouchableOpacity>
+
             <Text style={styles.privacyText}>
               By continuing, you agree to our Terms of Service and Privacy Policy.
               Your data is secure and private.
@@ -339,6 +345,16 @@ const styles = StyleSheet.create({
   featureText: {
     ...typography.caption,
     marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  clearButton: {
+    alignSelf: 'center',
+    padding: spacing.sm,
+    marginVertical: spacing.md,
+  },
+  clearButtonText: {
+    ...typography.caption,
+    color: colors.error,
     textAlign: 'center',
   },
   privacyText: {
