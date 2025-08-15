@@ -38,18 +38,16 @@ export default function App() {
       
       setUser(userData);
 
-      // Check if setup is complete
-      const setupComplete = await AsyncStorage.getItem('setup_complete');
-      if (setupComplete !== 'true') {
+      // Get baby data for this specific user
+      const babyData = await AsyncStorage.getItem(`baby_data_${userData.id}`);
+      if (!babyData) {
+        // No baby data found for this user, go to setup
         setAppState('setup');
         return;
       }
 
-      // Get baby data
-      const babyData = await AsyncStorage.getItem('baby_data');
-      if (babyData) {
-        setBaby(JSON.parse(babyData));
-      }
+      // Parse and set baby data
+      setBaby(JSON.parse(babyData));
 
       setAppState('dashboard');
     } catch (error) {

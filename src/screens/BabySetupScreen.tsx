@@ -75,9 +75,8 @@ export const BabySetupScreen: React.FC<BabySetupScreenProps> = ({
         userId: user.id,
       };
 
-      // Store baby data
-      await AsyncStorage.setItem('baby_data', JSON.stringify(baby));
-      await AsyncStorage.setItem('setup_complete', 'true');
+      // Store baby data for this specific user
+      await AsyncStorage.setItem(`baby_data_${user.id}`, JSON.stringify(baby));
       
       onSetupComplete(baby);
     } catch (error) {
