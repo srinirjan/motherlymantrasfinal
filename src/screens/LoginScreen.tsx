@@ -18,6 +18,7 @@ import { ClayInput } from '../components/ClayInput';
 import { colors, typography, spacing, shadows, clayStyles } from '../styles/theme';
 import { authService } from '../services/authService';
 import { User } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,8 +30,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingUser, setIsCheckingUser] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; name?: string }>({});
   const [isNewUser, setIsNewUser] = useState(false);
+  const [userExists, setUserExists] = useState<boolean | null>(null);
+
+  const checkUserExists = async (emailToCheck: string) => {
+    if (!emailToCheck.trim()) return;
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailToCheck)) return;
+    
+    try {
+      setIsCheckingUser(true);
+      // Simulate checking user existence by trying to get all users
+      const usersData = await AsyncStorage.getItem('all_users');
+      const users = usersData ? JSON.parse(usersData) : [];
+      const existingUser = users.find((u: any) => u.email.toLowerCase() === emailToCheck.toLowerCase());
+      
+      setUserExists(!!existingUser);
+      setIsNewUser(!existingUser);
+    } catch (error) {
+      console.error('Error checking user:', error);
+    } finally {
+      setIsCheckingUser(false);
+    }
+  };
 
   const validateForm = () => {
     const newErrors: { email?: string; name?: string } = {};
@@ -44,7 +69,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
       }
     }
     
-    if (isNewUser && !name.trim()) {
+    if (userExists === false && !name.trim()) {
       newErrors.name = 'Name is required for new accounts';
     }
     
@@ -82,11 +107,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
     }
   };
 
-  const toggleUserType = () => {
-    setIsNewUser(!isNewUser);
-    setErrors({});
-    setName('');
-  };
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -122,13 +143,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
               <View style={styles.formCard}>
                 <View style={styles.formHeader}>
                   <Text style={styles.formTitle}>
-                    {isNewUser ? 'Create Account' : 'Welcome Back'}
+                    {userExists === true ? 'Welcome Back!' : 
+                     userExists === false ? 'Create Account' : 
+                     'Sign In'}
                   </Text>
                   <Text style={styles.formSubtitle}>
-                    {isNewUser 
-                      ? 'Join thousands of loving parents' 
-                      : 'Sign in to continue your journey'
+                    {userExists === true ? 'Sign in to continue your journey' :
+                     userExists === false ? 'Join thousands of loving parents' :
+                     'Enter your email to get started'
                     }
+                    {isCheckingUser && ' Checking...'}
                   </Text>
                 </View>
 
@@ -139,6 +163,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
                   onChangeText={(text) => {
                     setEmail(text);
                     setErrors({ ...errors, email: undefined });
+                    setUserExists(null);
+                    // Check user existence after a short delay
+                    setTimeout(() => checkUserExists(text), 500);
                   }}
                   error={errors.email}
                   keyboardType="email-address"
@@ -147,7 +174,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
                   returnKeyType={isNewUser ? 'next' : 'done'}
                 />
 
-                {isNewUser && (
+                {userExists === false && (
                   <ClayInput
                     label="Your Name"
                     placeholder="Enter your full name"
@@ -163,26 +190,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
                 )}
 
                 <ClayButton
-                  title={isNewUser ? 'Create Account' : 'Sign In'}
+                  title={userExists === false ? 'Create Account' : 'Sign In'}
                   onPress={handleSignIn}
                   variant="primary"
                   size="large"
-                  loading={isLoading}
+                  loading={isLoading || isCheckingUser}
                   style={styles.signInButton}
                 />
 
-                <View style={styles.toggleSection}>
-                  <Text style={styles.toggleText}>
-                    {isNewUser ? 'Already have an account?' : "Don't have an account?"}
-                  </Text>
-                  <ClayButton
-                    title={isNewUser ? 'Sign In' : 'Create Account'}
-                    onPress={toggleUserType}
-                    variant="secondary"
-                    size="small"
-                    style={styles.toggleButton}
-                  />
-                </View>
+                {userExists !== null && (
+                  <View style={styles.statusSection}>
+                    <Text style={styles.statusText}>
+                      {userExists 
+                        ? '✓ Account found! Just click Sign In.' 
+                        : '✨ New user! Please add your name above.'
+                      }
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -283,17 +308,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.lg,
   },
-  toggleSection: {
+  statusSection: {
     alignItems: 'center',
     paddingTop: spacing.md,
   },
-  toggleText: {
+  statusText: {
     ...typography.body,
-    color: colors.lightText,
-    marginBottom: spacing.sm,
-  },
-  toggleButton: {
-    paddingHorizontal: spacing.xl,
+    color: colors.success,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   featuresSection: {
     paddingVertical: spacing.xl,
