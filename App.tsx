@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { BabySetupScreen } from './src/screens/BabySetupScreen';
+import { DashboardScreen } from './src/screens/DashboardScreen';
 import { authService } from './src/services/authService';
 import { User, Baby } from './src/types';
 
@@ -67,6 +68,17 @@ export default function App() {
     setAppState('dashboard');
   };
 
+  const handleSignOut = async () => {
+    try {
+      await authService.signOut();
+      setUser(null);
+      setBaby(null);
+      setAppState('welcome');
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+  };
+
   const renderScreen = () => {
     switch (appState) {
       case 'loading':
@@ -92,10 +104,14 @@ export default function App() {
         );
       
       case 'dashboard':
-        return (
-          <View style={styles.dashboardContainer}>
-            {/* Dashboard will be implemented in the next step */}
-          </View>
+        return user && baby ? (
+          <DashboardScreen 
+            user={user} 
+            baby={baby} 
+            onSignOut={handleSignOut}
+          />
+        ) : (
+          <LoginScreen onAuthSuccess={handleAuthSuccess} />
         );
       
       default:
