@@ -8,7 +8,7 @@ import {
   TextStyle,
   TextInputProps,
 } from 'react-native';
-import { colors, clayStyles, typography, shadows, spacing } from '../styles/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface ClayInputProps extends TextInputProps {
   label?: string;
@@ -26,7 +26,47 @@ export const ClayInput: React.FC<ClayInputProps> = ({
   labelStyle,
   ...textInputProps
 }) => {
+  const { theme } = useTheme();
+  const { colors, clayStyles, typography, shadows, spacing } = theme;
   const [isFocused, setIsFocused] = useState(false);
+
+  const styles = StyleSheet.create({
+    container: {
+      marginVertical: spacing.sm,
+    },
+    label: {
+      ...typography.body,
+      fontWeight: '600',
+      marginBottom: spacing.sm,
+      color: colors.darkText,
+    },
+    inputContainer: {
+      ...clayStyles.cardPremium,
+      backgroundColor: colors.inputBackground,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    focusedContainer: {
+      ...shadows.medium,
+      borderWidth: 2,
+      borderColor: colors.lavender,
+    },
+    errorContainer: {
+      borderWidth: 2,
+      borderColor: colors.error,
+    },
+    input: {
+      ...typography.body,
+      color: colors.darkText,
+      flex: 1,
+      minHeight: 20,
+    },
+    errorText: {
+      ...typography.caption,
+      color: colors.error,
+      marginTop: spacing.xs,
+    },
+  });
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -58,38 +98,4 @@ export const ClayInput: React.FC<ClayInputProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    marginVertical: spacing.sm,
-  },
-  label: {
-    ...typography.body,
-    fontWeight: '600',
-    marginBottom: spacing.sm,
-    color: colors.darkText,
-  },
-  inputContainer: {
-    ...clayStyles.input,
-    backgroundColor: colors.inputBackground,
-  },
-  focusedContainer: {
-    ...shadows.deep,
-    borderWidth: 2,
-    borderColor: colors.lavender,
-  },
-  errorContainer: {
-    borderWidth: 2,
-    borderColor: colors.error,
-  },
-  input: {
-    ...typography.body,
-    color: colors.darkText,
-    flex: 1,
-    minHeight: 20,
-  },
-  errorText: {
-    ...typography.caption,
-    color: colors.error,
-    marginTop: spacing.xs,
-  },
-}); 
+ 

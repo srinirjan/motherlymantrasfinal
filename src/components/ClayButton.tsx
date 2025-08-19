@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, clayStyles, typography, shadows } from '../styles/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface ClayButtonProps {
   title: string;
@@ -31,6 +31,29 @@ export const ClayButton: React.FC<ClayButtonProps> = ({
   style,
   textStyle,
 }) => {
+  const { theme } = useTheme();
+  const { colors, clayStyles, typography, shadows } = theme;
+
+  const styles = StyleSheet.create({
+    buttonContainer: {
+      borderRadius: 16,
+      overflow: 'hidden',
+      ...shadows.soft,
+    },
+    gradient: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 16,
+    },
+    buttonText: {
+      ...typography.button,
+      color: colors.darkText,
+      textAlign: 'center',
+    },
+    disabled: {
+      opacity: 0.6,
+    },
+  });
   const getButtonColors = () => {
     switch (variant) {
       case 'primary':
@@ -132,23 +155,4 @@ export const ClayButton: React.FC<ClayButtonProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  buttonContainer: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    ...shadows.soft,
-  },
-  gradient: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-  },
-  buttonText: {
-    ...typography.button,
-    color: colors.darkText,
-    textAlign: 'center',
-  },
-  disabled: {
-    opacity: 0.6,
-  },
-}); 
+ 

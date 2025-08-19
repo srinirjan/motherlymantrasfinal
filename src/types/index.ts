@@ -22,4 +22,26 @@ export interface AuthState {
 export interface SetupState {
   isSetupComplete: boolean;
   baby: Baby | null;
+}
+
+export interface FeedingLog {
+  id: string;
+  type: 'breast' | 'formula' | 'solid';
+  side?: 'left' | 'right';
+  duration: number; // in seconds
+  formulaAmount?: string;
+  timestamp: string;
+  babyId: string;
+  userId: string;
+  notes?: string;
+  isManualEntry?: boolean;
+}
+
+export interface DiaperLog {
+  id: string;
+  type: 'pee' | 'poop' | 'both';
+  timestamp: string;
+  babyId: string;
+  userId: string;
+  notes?: string;
 } 
