@@ -22,6 +22,7 @@ export const colors = {
   success: '#68D391',
   warning: '#F6E05E',
   error: '#FC8181',
+  softRed: '#F56565', // Aesthetically pleasing soft red for stop buttons
   
   // Premium specific colors
   cardBackground: '#FFFFFF',

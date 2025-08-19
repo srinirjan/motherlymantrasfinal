@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,16 @@ import {
   ScrollView,
   Dimensions,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing, shadows, clayStyles } from '../styles/theme';
-import { User, Baby } from '../types';
+import { User, Baby, DiaperLog } from '../types';
 import { debugStorage, clearAllStorage } from '../utils/debugStorage';
+import { useTheme } from '../context/ThemeContext';
+import { useStyles } from '../hooks/useStyles';
 
 const { width } = Dimensions.get('window');
 
@@ -21,17 +24,223 @@ interface DashboardScreenProps {
   user: User;
   baby: Baby;
   onSignOut: () => void;
+  onFeedingPress: () => void;
+  onLogsPress: () => void;
+  onDiaperPress: () => void;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   user,
   baby,
   onSignOut,
+  onFeedingPress,
+  onLogsPress,
+  onDiaperPress,
 }) => {
-  console.log('=== DASHBOARD SCREEN RENDERING ===');
-  console.log('User:', user);
-  console.log('Baby:', baby);
-  console.log('=== END DASHBOARD DEBUG ===');
+  const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { colors, typography, spacing, shadows, clayStyles } = theme;
+  const styles = useStyles();
+
+  // Feeding timer states
+  const [leftTimer, setLeftTimer] = useState(0);
+  const [rightTimer, setRightTimer] = useState(0);
+  const [leftActive, setLeftActive] = useState(false);
+  const [rightActive, setRightActive] = useState(false);
+  const [leftInterval, setLeftInterval] = useState<NodeJS.Timeout | null>(null);
+  const [rightInterval, setRightInterval] = useState<NodeJS.Timeout | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastOpacity = useState(new Animated.Value(0))[0];
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (leftInterval) clearInterval(leftInterval);
+      if (rightInterval) clearInterval(rightInterval);
+    };
+  }, [leftInterval, rightInterval]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+    
+    Animated.sequence([
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.delay(2000),
+      Animated.timing(toastOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setToastVisible(false);
+    });
+  };
+
+  const logDiaper = async (type: 'pee' | 'poop' | 'both') => {
+    try {
+      const diaperData: DiaperLog = {
+        id: `diaper_${Date.now()}`,
+        type: type,
+        timestamp: new Date().toISOString(),
+        babyId: baby.id,
+        userId: user.id,
+      };
+
+      // Store in diaper logs
+      const existingDiaperLogs = await AsyncStorage.getItem(`diapers_${user.id}`);
+      const diaperLogs = existingDiaperLogs ? JSON.parse(existingDiaperLogs) : [];
+      diaperLogs.unshift(diaperData);
+      
+      // Keep only last 100 entries
+      if (diaperLogs.length > 100) {
+        diaperLogs.splice(100);
+      }
+      
+      await AsyncStorage.setItem(`diapers_${user.id}`, JSON.stringify(diaperLogs));
+      
+      console.log('Diaper logged:', diaperData);
+      
+      const typeText = type === 'both' ? 'Pee & Poop' : type.charAt(0).toUpperCase() + type.slice(1);
+      showToast(`${typeText} logged successfully! 💩`);
+    } catch (error) {
+      console.error('Error logging diaper:', error);
+      showToast('Error logging diaper');
+    }
+  };
+
+  const saveFeedingSession = async (side: 'left' | 'right', duration: number) => {
+    try {
+      const feedingData = {
+        id: `feeding_${Date.now()}`,
+        type: 'breast',
+        side: side,
+        duration: duration,
+        timestamp: new Date().toISOString(),
+        babyId: baby.id,
+        userId: user.id,
+      };
+
+      // Get existing feedings
+      const existingFeedings = await AsyncStorage.getItem(`feedings_${user.id}`);
+      const feedings = existingFeedings ? JSON.parse(existingFeedings) : [];
+      
+      // Add new feeding
+      feedings.unshift(feedingData);
+      
+      // Keep only last 50 feedings
+      if (feedings.length > 50) {
+        feedings.splice(50);
+      }
+      
+      // Save back to storage
+      await AsyncStorage.setItem(`feedings_${user.id}`, JSON.stringify(feedings));
+      
+      console.log('Feeding saved:', feedingData);
+      showToast('Feed successfully added!');
+      
+    } catch (error) {
+      console.error('Error saving feeding:', error);
+      showToast('Error saving feed');
+    }
+  };
+
+  const startLeftTimer = async () => {
+    if (leftActive) {
+      // Stop timer and save if there's duration
+      if (leftInterval) clearInterval(leftInterval);
+      setLeftInterval(null);
+      setLeftActive(false);
+      
+      // Save feeding session if timer was running for more than 30 seconds
+      if (leftTimer > 30) {
+        await saveFeedingSession('left', leftTimer);
+        // Reset timer after successful save
+        setLeftTimer(0);
+      }
+    } else {
+      // Stop right timer if it's running (only one side active at a time)
+      if (rightActive) {
+        if (rightInterval) clearInterval(rightInterval);
+        setRightInterval(null);
+        setRightActive(false);
+        
+        // Save right session if it was running for more than 30 seconds
+        if (rightTimer > 30) {
+          await saveFeedingSession('right', rightTimer);
+          setRightTimer(0);
+        }
+      }
+      
+      // Start left timer
+      setLeftActive(true);
+      const interval = setInterval(() => {
+        setLeftTimer(prev => prev + 1);
+      }, 1000);
+      setLeftInterval(interval);
+    }
+  };
+
+  const startRightTimer = async () => {
+    if (rightActive) {
+      // Stop timer and save if there's duration
+      if (rightInterval) clearInterval(rightInterval);
+      setRightInterval(null);
+      setRightActive(false);
+      
+      // Save feeding session if timer was running for more than 30 seconds
+      if (rightTimer > 30) {
+        await saveFeedingSession('right', rightTimer);
+        // Reset timer after successful save
+        setRightTimer(0);
+      }
+    } else {
+      // Stop left timer if it's running (only one side active at a time)
+      if (leftActive) {
+        if (leftInterval) clearInterval(leftInterval);
+        setLeftInterval(null);
+        setLeftActive(false);
+        
+        // Save left session if it was running for more than 30 seconds
+        if (leftTimer > 30) {
+          await saveFeedingSession('left', leftTimer);
+          setLeftTimer(0);
+        }
+      }
+      
+      // Start right timer
+      setRightActive(true);
+      const interval = setInterval(() => {
+        setRightTimer(prev => prev + 1);
+      }, 1000);
+      setRightInterval(interval);
+    }
+  };
+
+  const resetTimers = () => {
+    // Stop all timers
+    if (leftInterval) clearInterval(leftInterval);
+    if (rightInterval) clearInterval(rightInterval);
+    
+    // Reset all states
+    setLeftInterval(null);
+    setRightInterval(null);
+    setLeftActive(false);
+    setRightActive(false);
+    setLeftTimer(0);
+    setRightTimer(0);
+  };
+
   const calculateAge = (birthDate: Date) => {
     const today = new Date();
     const birth = new Date(birthDate);
@@ -102,8 +311,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   ];
 
   const handleTrackingPress = (option: any) => {
-    // TODO: Navigate to specific tracking screen
-    console.log('Tracking option pressed:', option.id);
+    if (option.id === 'feeding') {
+      // Navigate to feeding screen
+      console.log('Opening feeding screen');
+      // TODO: Add navigation to feeding screen
+    } else {
+      // TODO: Navigate to other tracking screens
+      console.log('Tracking option pressed:', option.id);
+    }
   };
 
   return (
@@ -121,18 +336,36 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         >
           {/* Header */}
           <View style={styles.header}>
-                        <View style={styles.welcomeSection}>
-              <Text style={styles.welcomeText}>Good day, {user.name}! 👋</Text>
+                                  <View style={styles.welcomeSection}>
+            <Text style={styles.welcomeText}>Good day, {user.name}! 👋</Text>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity onPress={toggleTheme} style={styles.themeButton}>
+                <Ionicons 
+                  name={isDarkMode ? "sunny" : "moon"} 
+                  size={18} 
+                  color={colors.white} 
+                />
+                <Text style={styles.themeButtonText}>
+                  {isDarkMode ? 'Light' : 'Dark'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={onSignOut} style={styles.signOutButton}>
                 <Ionicons name="log-out-outline" size={18} color={colors.white} />
                 <Text style={styles.signOutText}>Sign Out</Text>
               </TouchableOpacity>
             </View>
+          </View>
 
             {/* Debug buttons - can be removed in production */}
             <View style={styles.debugSection}>
               <TouchableOpacity onPress={debugStorage} style={styles.debugButton}>
                 <Text style={styles.debugText}>Debug Storage</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={async () => {
+                const feeds = await AsyncStorage.getItem(`feedings_${user.id}`);
+                console.log('Stored feeds:', feeds ? JSON.parse(feeds) : 'No feeds found');
+              }} style={styles.debugButton}>
+                <Text style={styles.debugText}>Show Feeds</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={clearAllStorage} style={styles.debugButton}>
                 <Text style={styles.debugText}>Clear All Data</Text>
@@ -172,29 +405,164 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </View>
           </View>
 
-          {/* Quick Actions */}
-          <View style={styles.actionsSection}>
-            <Text style={styles.sectionTitle}>Quick Tracking</Text>
-            <View style={styles.actionsGrid}>
-              {trackingOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.id}
-                  style={styles.actionCard}
-                  onPress={() => handleTrackingPress(option)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionIcon, { backgroundColor: `${option.color}20` }]}>
-                    <Ionicons name={option.icon as any} size={24} color={option.color} />
+          {/* Quick Feeding Section */}
+          <View style={styles.quickFeedingSection}>
+            <Text style={styles.sectionTitle}>Quick Feeding</Text>
+            
+            {/* Feeding Status */}
+            {(leftActive || rightActive) && (
+              <View style={[
+                styles.feedingStatusCard,
+                leftActive && !rightActive && styles.feedingStatusCardLeftActive,
+                rightActive && !leftActive && styles.feedingStatusCardRightActive,
+                leftActive && rightActive && styles.feedingStatusCardBothActive,
+              ]}>
+                <View style={styles.feedingStatusHeader}>
+                  <View style={styles.feedingStatusLeft}>
+                    <Ionicons name="time" size={20} color={colors.darkText} />
+                    <Text style={styles.feedingStatusText}>Feeding in progress</Text>
                   </View>
-                  <Text style={styles.actionTitle}>{option.title}</Text>
-                  <Text style={styles.actionSubtitle}>{option.subtitle}</Text>
-                  {option.comingSoon && (
-                    <View style={styles.comingSoonBadge}>
-                      <Text style={styles.comingSoonText}>Soon</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
+                  <View style={styles.feedingStatusButtons}>
+                    <TouchableOpacity 
+                      style={styles.resetButton}
+                      onPress={resetTimers}
+                    >
+                      <Ionicons name="refresh" size={16} color={colors.darkText} />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.detailsButton}
+                      onPress={() => onFeedingPress()}
+                    >
+                      <Text style={styles.detailsButtonText}>Details</Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.darkText} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                <View style={styles.timersRow}>
+                  <View style={styles.timerDisplay}>
+                    <Text style={styles.timerLabel}>Left</Text>
+                    <Text style={styles.timerTime}>{formatTime(leftTimer)}</Text>
+                  </View>
+                  <View style={styles.timerDivider} />
+                  <View style={styles.timerDisplay}>
+                    <Text style={styles.timerLabel}>Right</Text>
+                    <Text style={styles.timerTime}>{formatTime(rightTimer)}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+            
+            {/* Feeding Buttons */}
+            <View style={styles.feedingButtonsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.feedingButton,
+                  leftActive && styles.feedingButtonActive
+                ]}
+                onPress={startLeftTimer}
+                activeOpacity={0.8}
+              >
+                <Ionicons 
+                  name="chevron-back" 
+                  size={28} 
+                  color={leftActive ? colors.white : colors.darkText} 
+                />
+                <Text style={[
+                  styles.feedingButtonText,
+                  leftActive && styles.feedingButtonTextActive
+                ]}>
+                  {leftActive ? 'Stop Left' : 'Start Left'}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.feedingButton,
+                  rightActive && styles.feedingButtonActive
+                ]}
+                onPress={startRightTimer}
+                activeOpacity={0.8}
+              >
+                <Ionicons 
+                  name="chevron-forward" 
+                  size={28} 
+                  color={rightActive ? colors.white : colors.darkText} 
+                />
+                <Text style={[
+                  styles.feedingButtonText,
+                  rightActive && styles.feedingButtonTextActive
+                ]}>
+                  {rightActive ? 'Stop Right' : 'Start Right'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            {!(leftActive || rightActive) && (
+              <Text style={styles.feedingHint}>Tap a button to start timing</Text>
+            )}
+          </View>
+
+          {/* Quick Diaper Log */}
+          <View style={styles.quickDiaperSection}>
+            <Text style={styles.sectionTitle}>Quick Diaper Log</Text>
+            <View style={styles.diaperButtonsRow}>
+              <TouchableOpacity
+                style={[styles.diaperButton, { backgroundColor: colors.babyBlue }]}
+                activeOpacity={0.8}
+                onPress={() => logDiaper('pee')}
+              >
+                <Ionicons name="water" size={32} color={colors.white} />
+                <Text style={styles.diaperButtonText}>Pee</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.diaperButton, { backgroundColor: colors.softPeach }]}
+                activeOpacity={0.8}
+                onPress={() => logDiaper('poop')}
+              >
+                <Ionicons name="ellipse" size={32} color={colors.darkText} />
+                <Text style={[styles.diaperButtonText, { color: colors.darkText }]}>Poop</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity
+              style={styles.viewLogsButton}
+              onPress={onDiaperPress}
+            >
+              <Ionicons name="list" size={16} color={colors.darkText} />
+              <Text style={styles.viewLogsText}>View Diaper Logs</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Nap Timer */}
+          <View style={styles.quickNapSection}>
+            <Text style={styles.sectionTitle}>Quick Nap Timer</Text>
+            <View style={styles.napTimerContainer}>
+              <Text style={styles.napTimer}>0:00</Text>
+              <TouchableOpacity style={styles.napButton} activeOpacity={0.8}>
+                <Ionicons name="moon" size={20} color={colors.darkText} />
+                <Text style={styles.napButtonText}>Start Nap</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Additional Features */}
+          <View style={styles.additionalFeaturesSection}>
+            <View style={styles.featuresRow}>
+              <TouchableOpacity style={styles.featureCard} activeOpacity={0.8}>
+                <View style={[styles.featureIcon, { backgroundColor: colors.softPeach }]}>
+                  <Ionicons name="camera" size={24} color={colors.white} />
+                </View>
+                <Text style={styles.featureTitle}>AI Poop Analyzer</Text>
+              </TouchableOpacity>
+              
+                                           <TouchableOpacity style={styles.featureCard} activeOpacity={0.8} onPress={onLogsPress}>
+                <View style={[styles.featureIcon, { backgroundColor: colors.babyBlue }]}>
+                  <Ionicons name="time" size={24} color={colors.white} />
+                </View>
+                <Text style={styles.featureTitle}>Feeding History</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -212,198 +580,24 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </View>
           </View>
         </ScrollView>
+        
+        {/* Toast Notification */}
+        {toastVisible && (
+          <Animated.View 
+            style={[
+              styles.toastContainer,
+              { opacity: toastOpacity }
+            ]}
+          >
+            <View style={styles.toast}>
+              <Ionicons name="checkmark-circle" size={20} color={colors.white} />
+              <Text style={styles.toastText}>{toastMessage}</Text>
+            </View>
+          </Animated.View>
+        )}
       </LinearGradient>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  background: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.lg,
-  },
-  header: {
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  welcomeSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  welcomeText: {
-    ...typography.h2,
-    color: colors.darkText,
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.error,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 12,
-    ...shadows.soft,
-  },
-  signOutText: {
-    ...typography.caption,
-    color: colors.white,
-    marginLeft: spacing.xs,
-    fontWeight: '600',
-  },
-  debugSection: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-  },
-  debugButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.lightText,
-    borderRadius: 8,
-    opacity: 0.7,
-  },
-  debugText: {
-    ...typography.caption,
-    color: colors.white,
-    fontSize: 10,
-  },
-  babyProfileSection: {
-    paddingVertical: spacing.md,
-  },
-  babyCard: {
-    ...clayStyles.cardPremium,
-  },
-  babyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  babyIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.backgroundStart,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-    ...shadows.soft,
-  },
-  babyInfo: {
-    flex: 1,
-  },
-  babyName: {
-    ...typography.h1,
-    color: colors.darkText,
-    marginBottom: spacing.xs,
-  },
-  babyAge: {
-    ...typography.body,
-    color: colors.lightText,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNumber: {
-    ...typography.h1,
-    color: colors.darkText,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    ...typography.caption,
-    color: colors.lightText,
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: colors.lightText,
-    opacity: 0.2,
-  },
-  actionsSection: {
-    paddingVertical: spacing.lg,
-  },
-  sectionTitle: {
-    ...typography.h2,
-    color: colors.darkText,
-    marginBottom: spacing.lg,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  actionCard: {
-    width: (width - spacing.lg * 2 - spacing.md) / 2,
-    ...clayStyles.card,
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    position: 'relative',
-  },
-  actionIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  actionTitle: {
-    ...typography.h3,
-    color: colors.darkText,
-    marginBottom: spacing.xs,
-    textAlign: 'center',
-  },
-  actionSubtitle: {
-    ...typography.caption,
-    color: colors.lightText,
-    textAlign: 'center',
-  },
-  comingSoonBadge: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    backgroundColor: colors.gold,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  comingSoonText: {
-    ...typography.caption,
-    fontSize: 10,
-    color: colors.white,
-    fontWeight: '600',
-  },
-  activitySection: {
-    paddingVertical: spacing.lg,
-  },
-  emptyState: {
-    ...clayStyles.card,
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
-  emptyIcon: {
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    ...typography.h3,
-    color: colors.darkText,
-    marginBottom: spacing.sm,
-  },
-  emptySubtitle: {
-    ...typography.body,
-    color: colors.lightText,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-}); 
+ 
