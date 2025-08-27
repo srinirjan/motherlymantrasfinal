@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { User, Baby, DiaperLog } from '../types';
+import { User, Baby, DiaperLog, NapLog } from '../types';
 import { debugStorage, clearAllStorage } from '../utils/debugStorage';
 import { useTheme } from '../context/ThemeContext';
 import { useStyles } from '../hooks/useStyles';
@@ -48,6 +48,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [rightActive, setRightActive] = useState(false);
   const [leftInterval, setLeftInterval] = useState<NodeJS.Timeout | null>(null);
   const [rightInterval, setRightInterval] = useState<NodeJS.Timeout | null>(null);
+  // Nap timer states
+  const [napTimer, setNapTimer] = useState(0);
+  const [napActive, setNapActive] = useState(false);
+  const [napInterval, setNapInterval] = useState<NodeJS.Timeout | null>(null);
+  const [napStartTime, setNapStartTime] = useState<string | null>(null);
+
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const toastOpacity = useState(new Animated.Value(0))[0];
@@ -57,8 +63,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     return () => {
       if (leftInterval) clearInterval(leftInterval);
       if (rightInterval) clearInterval(rightInterval);
+      if (napInterval) clearInterval(napInterval);
     };
-  }, [leftInterval, rightInterval]);
+  }, [leftInterval, rightInterval, napInterval]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -117,6 +124,75 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       console.error('Error logging diaper:', error);
       showToast('Error logging diaper');
     }
+  };
+
+  const saveNapSession = async (startTime: string, duration: number) => {
+    try {
+      const endTime = new Date().toISOString();
+      const napData: NapLog = {
+        id: `nap_${Date.now()}`,
+        startTime: startTime,
+        endTime: endTime,
+        duration: duration,
+        timestamp: endTime,
+        babyId: baby.id,
+        userId: user.id,
+      };
+
+      // Store in nap logs
+      const existingNapLogs = await AsyncStorage.getItem(`naps_${user.id}`);
+      const napLogs = existingNapLogs ? JSON.parse(existingNapLogs) : [];
+      napLogs.unshift(napData);
+      
+      // Keep only last 100 entries
+      if (napLogs.length > 100) {
+        napLogs.splice(100);
+      }
+      
+      await AsyncStorage.setItem(`naps_${user.id}`, JSON.stringify(napLogs));
+      
+      console.log('Nap saved:', napData);
+      
+      const durationText = formatTime(duration);
+      showToast(`Nap logged: ${durationText} 😴`);
+    } catch (error) {
+      console.error('Error saving nap:', error);
+      showToast('Error saving nap');
+    }
+  };
+
+  const startStopNapTimer = async () => {
+    if (napActive) {
+      // Stop nap timer and save if there's duration
+      if (napInterval) clearInterval(napInterval);
+      setNapInterval(null);
+      setNapActive(false);
+      
+      if (napTimer > 60 && napStartTime) { // Only save if nap was longer than 1 minute
+        await saveNapSession(napStartTime, napTimer);
+        setNapTimer(0);
+        setNapStartTime(null);
+      } else {
+        setNapTimer(0);
+        setNapStartTime(null);
+      }
+    } else {
+      // Start nap timer
+      setNapActive(true);
+      setNapStartTime(new Date().toISOString());
+      const interval = setInterval(() => {
+        setNapTimer(prev => prev + 1);
+      }, 1000);
+      setNapInterval(interval);
+    }
+  };
+
+  const resetNapTimer = () => {
+    if (napInterval) clearInterval(napInterval);
+    setNapInterval(null);
+    setNapActive(false);
+    setNapTimer(0);
+    setNapStartTime(null);
   };
 
   const saveFeedingSession = async (side: 'left' | 'right', duration: number) => {
@@ -367,6 +443,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               }} style={styles.debugButton}>
                 <Text style={styles.debugText}>Show Feeds</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={async () => {
+                const naps = await AsyncStorage.getItem(`naps_${user.id}`);
+                console.log('Stored naps:', naps ? JSON.parse(naps) : 'No naps found');
+              }} style={styles.debugButton}>
+                <Text style={styles.debugText}>Show Naps</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={clearAllStorage} style={styles.debugButton}>
                 <Text style={styles.debugText}>Clear All Data</Text>
               </TouchableOpacity>
@@ -539,11 +621,43 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <View style={styles.quickNapSection}>
             <Text style={styles.sectionTitle}>Quick Nap Timer</Text>
             <View style={styles.napTimerContainer}>
-              <Text style={styles.napTimer}>0:00</Text>
-              <TouchableOpacity style={styles.napButton} activeOpacity={0.8}>
-                <Ionicons name="moon" size={20} color={colors.darkText} />
-                <Text style={styles.napButtonText}>Start Nap</Text>
-              </TouchableOpacity>
+              <Text style={styles.napTimer}>{formatTime(napTimer)}</Text>
+              <View style={styles.napButtonsRow}>
+                <TouchableOpacity 
+                  style={[
+                    styles.napButton, 
+                    napActive && styles.napButtonActive
+                  ]} 
+                  activeOpacity={0.8}
+                  onPress={startStopNapTimer}
+                >
+                  <Ionicons 
+                    name={napActive ? "stop" : "moon"} 
+                    size={20} 
+                    color={napActive ? colors.white : colors.darkText} 
+                  />
+                  <Text style={[
+                    styles.napButtonText,
+                    napActive && styles.napButtonTextActive
+                  ]}>
+                    {napActive ? "Stop Nap" : "Start Nap"}
+                  </Text>
+                </TouchableOpacity>
+                
+                {(napActive || napTimer > 0) && (
+                  <TouchableOpacity 
+                    style={styles.resetNapButton} 
+                    activeOpacity={0.8}
+                    onPress={resetNapTimer}
+                  >
+                    <Ionicons name="refresh" size={18} color={colors.lightText} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {napActive && (
+                <Text style={styles.napHint}>Nap in progress... 😴</Text>
+              )}
             </View>
           </View>
 

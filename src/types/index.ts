@@ -44,4 +44,15 @@ export interface DiaperLog {
   babyId: string;
   userId: string;
   notes?: string;
+}
+
+export interface NapLog {
+  id: string;
+  startTime: string;
+  endTime: string;
+  duration: number; // in seconds
+  timestamp: string; // when the nap ended
+  babyId: string;
+  userId: string;
+  notes?: string;
 } 

@@ -6,32 +6,38 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { User, Baby, FeedingLog, DiaperLog } from '../types';
+import { User, Baby, FeedingLog, DiaperLog, NapLog } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { SwipeableLogItem } from '../components/SwipeableLogItem';
+import { EditLogModal } from '../components/EditLogModal';
 
 interface AllLogsScreenProps {
   user: User;
   baby: Baby;
   onBack: () => void;
-  onAddFeed: () => void;
+  onAddLog: () => void;
 }
 
-type LogEntry = (FeedingLog & { logType: 'feeding' }) | (DiaperLog & { logType: 'diaper' });
+type LogEntry = (FeedingLog & { logType: 'feeding' }) | (DiaperLog & { logType: 'diaper' }) | (NapLog & { logType: 'nap' });
 
-export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack, onAddFeed }) => {
+export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack, onAddLog }) => {
   const { theme, isDarkMode } = useTheme();
   const { colors, typography, spacing, shadows, clayStyles } = theme;
   
   const [feedingLogs, setFeedingLogs] = useState<FeedingLog[]>([]);
   const [diaperLogs, setDiaperLogs] = useState<DiaperLog[]>([]);
+  const [napLogs, setNapLogs] = useState<NapLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'feeding' | 'diaper'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'feeding' | 'diaper' | 'nap'>('all');
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
 
   const loadFeedingLogs = async () => {
     try {
@@ -63,9 +69,24 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
     }
   };
 
+  const loadNapLogs = async () => {
+    try {
+      const storedNaps = await AsyncStorage.getItem(`naps_${user.id}`);
+      if (storedNaps) {
+        const logs = JSON.parse(storedNaps);
+        setNapLogs(logs);
+      } else {
+        setNapLogs([]);
+      }
+    } catch (error) {
+      console.error('Error loading nap logs:', error);
+      setNapLogs([]);
+    }
+  };
+
   useEffect(() => {
     const loadAllLogs = async () => {
-      await Promise.all([loadFeedingLogs(), loadDiaperLogs()]);
+      await Promise.all([loadFeedingLogs(), loadDiaperLogs(), loadNapLogs()]);
       setLoading(false);
     };
     loadAllLogs();
@@ -73,7 +94,7 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadFeedingLogs(), loadDiaperLogs()]);
+    await Promise.all([loadFeedingLogs(), loadDiaperLogs(), loadNapLogs()]);
     setRefreshing(false);
   };
 
@@ -84,7 +105,42 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     
-    if (diffHours > 0) {
+    // For logs older than 24 hours, show actual date and time
+    if (diffHours >= 24) {
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      
+      // Check if it's today
+      if (date.toDateString() === today.toDateString()) {
+        return date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+      // Check if it's yesterday
+      else if (date.toDateString() === yesterday.toDateString()) {
+        return `Yesterday ${date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })}`;
+      }
+      // For older dates, show date and time
+      else {
+        return `${date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric'
+        })} ${date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })}`;
+      }
+    }
+    // For recent logs (less than 24 hours), show relative time
+    else if (diffHours > 0) {
       return `${diffHours}h ${diffMins}m ago`;
     } else if (diffMins > 0) {
       return `${diffMins}m ago`;
@@ -111,8 +167,9 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
   const getCombinedLogs = (): LogEntry[] => {
     const feeding: LogEntry[] = feedingLogs.map(log => ({ ...log, logType: 'feeding' as const }));
     const diaper: LogEntry[] = diaperLogs.map(log => ({ ...log, logType: 'diaper' as const }));
+    const nap: LogEntry[] = napLogs.map(log => ({ ...log, logType: 'nap' as const }));
     
-    const combined = [...feeding, ...diaper];
+    const combined = [...feeding, ...diaper, ...nap];
     return combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   };
 
@@ -123,6 +180,8 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
         return allLogs.filter(log => log.logType === 'feeding');
       case 'diaper':
         return allLogs.filter(log => log.logType === 'diaper');
+      case 'nap':
+        return allLogs.filter(log => log.logType === 'nap');
       default:
         return allLogs;
     }
@@ -136,20 +195,119 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
     const todayDiapers = diaperLogs.filter(log => 
       new Date(log.timestamp).toDateString() === today
     );
+    const todayNaps = napLogs.filter(log => 
+      new Date(log.timestamp).toDateString() === today
+    );
     
     const feedCount = todayFeedings.length;
     const totalFeedTime = todayFeedings.reduce((sum, log) => sum + log.duration, 0);
     const diaperCount = todayDiapers.length;
+    const napCount = todayNaps.length;
+    const totalNapTime = todayNaps.reduce((sum, log) => sum + log.duration, 0);
     
-    const formatFeedTime = (seconds: number) => {
+    const formatTime = (seconds: number) => {
       const mins = Math.floor(seconds / 60);
       return mins > 0 ? `${mins}m` : '0m';
     };
     
-    return { feedCount, totalFeedTime: formatFeedTime(totalFeedTime), diaperCount };
+    return { 
+      feedCount, 
+      totalFeedTime: formatTime(totalFeedTime), 
+      diaperCount,
+      napCount,
+      totalNapTime: formatTime(totalNapTime)
+    };
   };
 
-  const { feedCount, totalFeedTime, diaperCount } = getTodayStats();
+  const { feedCount, totalFeedTime, diaperCount, napCount, totalNapTime } = getTodayStats();
+
+  const deleteLog = async (logId: string, logType: 'feeding' | 'diaper' | 'nap') => {
+    try {
+      let storageKey = '';
+      let currentLogs: any[] = [];
+      
+      switch (logType) {
+        case 'feeding':
+          storageKey = `feedings_${user.id}`;
+          currentLogs = feedingLogs;
+          break;
+        case 'diaper':
+          storageKey = `diapers_${user.id}`;
+          currentLogs = diaperLogs;
+          break;
+        case 'nap':
+          storageKey = `naps_${user.id}`;
+          currentLogs = napLogs;
+          break;
+      }
+      
+      const updatedLogs = currentLogs.filter(log => log.id !== logId);
+      await AsyncStorage.setItem(storageKey, JSON.stringify(updatedLogs));
+      
+      // Update local state
+      switch (logType) {
+        case 'feeding':
+          setFeedingLogs(updatedLogs);
+          break;
+        case 'diaper':
+          setDiaperLogs(updatedLogs);
+          break;
+        case 'nap':
+          setNapLogs(updatedLogs);
+          break;
+      }
+      
+      console.log(`${logType} log deleted:`, logId);
+    } catch (error) {
+      console.error(`Error deleting ${logType} log:`, error);
+    }
+  };
+
+  const editLog = (logId: string, logType: 'feeding' | 'diaper' | 'nap') => {
+    const allLogs = getCombinedLogs();
+    const logToEdit = allLogs.find(log => log.id === logId && log.logType === logType);
+    if (logToEdit) {
+      setEditingLog(logToEdit);
+      setEditModalVisible(true);
+    }
+  };
+
+  const handleSaveEdit = async (updatedLog: LogEntry) => {
+    try {
+      let storageKey = '';
+      let currentLogs: any[] = [];
+      let setLogsFunction: (logs: any[]) => void;
+      
+      switch (updatedLog.logType) {
+        case 'feeding':
+          storageKey = `feedings_${user.id}`;
+          currentLogs = feedingLogs;
+          setLogsFunction = setFeedingLogs;
+          break;
+        case 'diaper':
+          storageKey = `diapers_${user.id}`;
+          currentLogs = diaperLogs;
+          setLogsFunction = setDiaperLogs;
+          break;
+        case 'nap':
+          storageKey = `naps_${user.id}`;
+          currentLogs = napLogs;
+          setLogsFunction = setNapLogs;
+          break;
+      }
+      
+      const updatedLogs = currentLogs.map(log => 
+        log.id === updatedLog.id ? updatedLog : log
+      );
+      
+      await AsyncStorage.setItem(storageKey, JSON.stringify(updatedLogs));
+      setLogsFunction(updatedLogs);
+      
+      console.log(`${updatedLog.logType} log updated:`, updatedLog.id);
+    } catch (error) {
+      console.error(`Error updating ${updatedLog.logType} log:`, error);
+    }
+  };
 
   const styles = {
     container: {
@@ -235,25 +393,27 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
     },
     filterRow: {
       flexDirection: 'row' as const,
-      gap: spacing.sm,
+      gap: spacing.xs,
     },
     filterButton: {
       flex: 1,
       paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.md,
+      paddingHorizontal: spacing.xs,
       borderRadius: 20,
       alignItems: 'center' as const,
       justifyContent: 'center' as const,
       backgroundColor: colors.inputBackground,
+      minWidth: 0, // Allow shrinking
     },
     filterButtonActive: {
       backgroundColor: colors.mintGreen,
       ...shadows.soft,
     },
     filterText: {
-      ...typography.bodyMedium,
+      ...typography.body,
       color: colors.darkText,
       fontWeight: '600' as const,
+      textAlign: 'center' as const,
     },
     filterTextActive: {
       color: colors.white,
@@ -268,8 +428,6 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
       fontWeight: '600' as const,
     },
     logItem: {
-      ...clayStyles.cardPremium,
-      marginBottom: spacing.md,
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.lg,
     },
@@ -339,7 +497,7 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
         default:
           return { name: 'help-circle' as const, color: colors.lightText };
       }
-    } else {
+    } else if (log.logType === 'diaper') {
       const diaperLog = log as DiaperLog & { logType: 'diaper' };
       switch (diaperLog.type) {
         case 'pee':
@@ -351,6 +509,9 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
         default:
           return { name: 'help-circle' as const, color: colors.lightText };
       }
+    } else {
+      // nap log
+      return { name: 'moon' as const, color: colors.lavender };
     }
   };
 
@@ -364,9 +525,19 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
       } else {
         return 'Solid food';
       }
-    } else {
+    } else if (log.logType === 'diaper') {
       const diaperLog = log as DiaperLog & { logType: 'diaper' };
       return `Diaper change`;
+    } else {
+      const napLog = log as NapLog & { logType: 'nap' };
+      const duration = napLog.duration;
+      const hours = Math.floor(duration / 3600);
+      const mins = Math.floor((duration % 3600) / 60);
+      if (hours > 0) {
+        return `Nap duration: ${hours}h ${mins}m`;
+      } else {
+        return `Nap duration: ${mins}m`;
+      }
     }
   };
 
@@ -391,7 +562,7 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
                 <Ionicons name="arrow-back" size={20} color={colors.darkText} />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>All Logs</Text>
-              <TouchableOpacity onPress={onAddFeed} style={styles.addButton}>
+              <TouchableOpacity onPress={onAddLog} style={styles.addButton}>
                 <Ionicons name="add" size={24} color={colors.white} />
               </TouchableOpacity>
             </View>
@@ -463,6 +634,20 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
                   Diaper
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.filterButton,
+                  activeFilter === 'nap' && styles.filterButtonActive,
+                ]}
+                onPress={() => setActiveFilter('nap')}
+              >
+                <Text style={[
+                  styles.filterText,
+                  activeFilter === 'nap' && styles.filterTextActive,
+                ]}>
+                  Nap
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -486,27 +671,46 @@ export const AllLogsScreen: React.FC<AllLogsScreenProps> = ({ user, baby, onBack
             ) : (
               filteredLogs.map((log) => {
                 const icon = getLogIcon(log);
+                const logTypeText = log.logType === 'feeding' 
+                  ? (log as FeedingLog).type 
+                  : log.logType === 'diaper'
+                  ? (log as DiaperLog).type
+                  : 'nap';
+                
                 return (
-                  <View key={log.id} style={styles.logItem}>
-                    <View style={styles.logHeader}>
-                      <View style={styles.logType}>
-                        <Ionicons name={icon.name} size={24} color={icon.color} />
-                        <Text style={styles.logTypeText}>
-                          {log.logType === 'feeding' 
-                            ? (log as FeedingLog).type 
-                            : (log as DiaperLog).type
-                          }
-                        </Text>
+                  <SwipeableLogItem
+                    key={log.id}
+                    logType={logTypeText}
+                    logDetails={getLogDetails(log)}
+                    onEdit={() => editLog(log.id, log.logType)}
+                    onDelete={() => deleteLog(log.id, log.logType)}
+                  >
+                    <View style={styles.logItem}>
+                      <View style={styles.logHeader}>
+                        <View style={styles.logType}>
+                          <Ionicons name={icon.name} size={24} color={icon.color} />
+                          <Text style={styles.logTypeText}>{logTypeText}</Text>
+                        </View>
+                        <Text style={styles.logTime}>{formatTime(log.timestamp)}</Text>
                       </View>
-                      <Text style={styles.logTime}>{formatTime(log.timestamp)}</Text>
+                      <Text style={styles.logDetails}>{getLogDetails(log)}</Text>
                     </View>
-                    <Text style={styles.logDetails}>{getLogDetails(log)}</Text>
-                  </View>
+                  </SwipeableLogItem>
                 );
               })
             )}
           </View>
         </ScrollView>
+
+        <EditLogModal
+          visible={editModalVisible}
+          log={editingLog}
+          onClose={() => {
+            setEditModalVisible(false);
+            setEditingLog(null);
+          }}
+          onSave={handleSaveEdit}
+        />
       </LinearGradient>
     </SafeAreaView>
   );
