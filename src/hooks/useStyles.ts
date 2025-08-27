@@ -339,6 +339,13 @@ export const useStyles = () => {
       fontWeight: '300',
       marginBottom: spacing.md,
     },
+    napButtonsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.md,
+      marginTop: spacing.md,
+    },
     napButton: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -346,12 +353,34 @@ export const useStyles = () => {
       paddingVertical: spacing.md,
       backgroundColor: colors.inputBackground,
       borderRadius: 25,
+      gap: spacing.sm,
+    },
+    napButtonActive: {
+      backgroundColor: colors.lavender,
+      ...shadows.medium,
     },
     napButtonText: {
       ...typography.bodyMedium,
       color: colors.darkText,
       fontWeight: '600',
-      marginLeft: spacing.sm,
+    },
+    napButtonTextActive: {
+      color: colors.white,
+    },
+    resetNapButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.inputBackground,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    napHint: {
+      ...typography.body,
+      color: colors.lightText,
+      textAlign: 'center',
+      marginTop: spacing.sm,
+      fontStyle: 'italic',
     },
     
     // Additional Features Section

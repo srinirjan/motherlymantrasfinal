@@ -2,18 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { BabySetupScreen } from './src/screens/BabySetupScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { FeedingScreen } from './src/screens/FeedingScreen';
 import { AllLogsScreen } from './src/screens/AllLogsScreen';
+import { AddLogScreen } from './src/screens/AddLogScreen';
 import { DiaperScreen } from './src/screens/DiaperScreen';
 import { BottomNavigation } from './src/components/BottomNavigation';
 import { authService } from './src/services/authService';
 import { User, Baby } from './src/types';
 
-type AppState = 'loading' | 'welcome' | 'setup' | 'dashboard' | 'feeding' | 'logs' | 'diaper' | 'profile' | 'ai-analyzer';
+type AppState = 'loading' | 'welcome' | 'setup' | 'dashboard' | 'feeding' | 'logs' | 'add-log' | 'diaper' | 'profile' | 'ai-analyzer';
 
 function AppContent() {
   const [appState, setAppState] = useState<AppState>('loading');
@@ -134,6 +136,10 @@ function AppContent() {
     setAppState('feeding');
   };
 
+  const handleAddLogPress = () => {
+    setAppState('add-log');
+  };
+
   const handleDiaperPress = () => {
     setAppState('diaper');
     setCurrentTab('logs'); // Set tab to logs since diaper is part of tracking
@@ -245,13 +251,25 @@ function AppContent() {
               user={user}
               baby={baby}
               onBack={handleBackToDashboard}
-              onAddFeed={handleAddFeedPress}
+              onAddLog={handleAddLogPress}
             />
             <BottomNavigation
               activeTab={currentTab}
               onTabPress={handleTabPress}
             />
           </View>
+        ) : (
+          <LoginScreen onAuthSuccess={handleAuthSuccess} />
+        );
+      
+      case 'add-log':
+        console.log('Rendering: Add Log screen');
+        return user && baby ? (
+          <AddLogScreen
+            user={user}
+            baby={baby}
+            onBack={() => setAppState('logs')}
+          />
         ) : (
           <LoginScreen onAuthSuccess={handleAuthSuccess} />
         );

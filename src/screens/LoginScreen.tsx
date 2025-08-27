@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -131,13 +132,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthSuccess }) => {
           >
             {/* Hero Section */}
             <View style={styles.heroSection}>
-              <View style={styles.iconContainer}>
-                <Ionicons name="heart" size={70} color={colors.blushPink} />
+              <View style={styles.logoContainer}>
+                <Image 
+                  source={require('../../assets/motherly-mantras-logo.png')}
+                  style={styles.logo}
+                  resizeMode="cover"
+                />
               </View>
-              <Text style={styles.title}>Motherly Mantras</Text>
-              <Text style={styles.subtitle}>
-                Your premium companion for tracking your baby's precious moments with elegance
-              </Text>
+
             </View>
 
             {/* Login Form */}
@@ -266,15 +268,17 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
     paddingBottom: spacing.xl,
   },
-  iconContainer: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: colors.cardBackground,
+  logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xl,
-    ...shadows.goldGlow,
+    marginBottom: -spacing.md,
+    alignSelf: 'center',
+    overflow: 'hidden',
+  },
+  logo: {
+    width: 280,
+    height: 280,
+    opacity: 1,
   },
   title: {
     ...typography.displayLarge,

@@ -217,7 +217,6 @@ const createClayStyles = (colors: typeof lightColors, shadows: typeof lightShado
   } as ViewStyle,
   
   buttonPrimary: {
-    backgroundColor: colors.mintGreen,
     borderRadius: 25,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
